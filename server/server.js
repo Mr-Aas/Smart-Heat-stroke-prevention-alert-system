@@ -53,11 +53,11 @@ app.use((req, res, next) => {
   });
 });
 
-app.use(notFound);
-app.use(errorHandler);
 app.get('/',(req, res)=>{
   res.json({message:"backend is running successfully"})
 })
+app.use(notFound);
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
