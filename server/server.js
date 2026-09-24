@@ -4,6 +4,7 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import cron from "node-cron";
 
+
 import { connectDB } from "./config/db.js";
 import { notFound, errorHandler } from "./middleware/errorMiddleware.js";
 
@@ -27,7 +28,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const clientDistPath = path.resolve(__dirname, "../client/dist");
 
-app.use(cors({ origin: process.env.CLIENT_URL || "*", credentials: true }));
+app.use(cors());
 app.use(express.json());
 
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300 });
