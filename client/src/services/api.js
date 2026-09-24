@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const api = axios.create({ baseURL: "/api" });
+const apiUrl = import.meta.env.VITE_API_URL;
+const api = axios.create({ baseURL: apiUrl });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("smartheat_token");
