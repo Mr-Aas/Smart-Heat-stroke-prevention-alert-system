@@ -6,7 +6,7 @@ import { sendWhatsAppAlert } from "../services/whatsappService.js";
 import { sweepAndCreateAlerts } from "./alertController.js";
 
 function signToken(user) {
-  return jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
+  return jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET || "smartheat_ai_local_jwt_secret_key_2026", {
     expiresIn: process.env.JWT_EXPIRES_IN || "7d",
   });
 }

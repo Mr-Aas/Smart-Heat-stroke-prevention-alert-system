@@ -17,14 +17,15 @@ import adminRoutes from "./routes/adminRoutes.js";
 import { sweepAndCreateAlerts } from "./controllers/alertController.js";
 import { initWhatsApp } from "./services/whatsappService.js";
 import path from "path";
-
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
 const app = express();
 
-// Line no 27 add by Me
-const __dirname = path.resolve();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const clientDistPath = path.resolve(__dirname, "../client/dist");
 
 app.use(cors({ origin: process.env.CLIENT_URL || "*", credentials: true }));
 app.use(express.json());
@@ -44,10 +45,12 @@ app.use("/api/ai", aiRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminRoutes);
 
-// Line no 47-51 add by Me
-app.use(express.static(path.join(__dirname, "client", "dist")));
-app.get("/{*splat}", (_, res) => {
-  res.sendFile(path.resolve(__dirname, "client", "dist", "index.html"));
+app.use(express.static(clientDistPath));
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api")) return next();
+  res.sendFile(path.join(clientDistPath, "index.html"), (err) => {
+    if (err) next();
+  });
 });
 
 app.use(notFound);
