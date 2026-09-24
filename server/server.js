@@ -15,7 +15,7 @@ import aiRoutes from "./routes/aiRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import { sweepAndCreateAlerts } from "./controllers/alertController.js";
-import { initWhatsApp } from "./services/whatsappService.js";
+// import { initWhatsApp } from "./services/whatsappService.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -62,9 +62,9 @@ async function start() {
   await connectDB();
 
   // Initialize WhatsApp Web Client (prints QR in console if authentication is needed)
-  if (process.env.ENABLE_WHATSAPP !== "false") {
-    initWhatsApp();
-  }
+  // if (process.env.ENABLE_WHATSAPP !== "false") {
+  //   initWhatsApp();
+  // }
 
   app.listen(PORT, () => {
     console.log(`SmartHeat AI server running on port ${PORT} (DEMO_MODE=${process.env.DEMO_MODE})`);

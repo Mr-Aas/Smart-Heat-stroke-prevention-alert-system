@@ -2,7 +2,7 @@ import Notification from "../models/Notification.js";
 import {
   sendWhatsAppAlert,
   getWhatsAppStatus,
-  initWhatsApp,
+  // initWhatsApp,
   formatWhatsAppNumber,
 } from "./whatsappService.js";
 
@@ -129,7 +129,7 @@ export async function sendHeatAlert({ to, alert, channel = "WHATSAPP", userId })
 
 export {
   sendWhatsAppAlert,
-  initWhatsApp,
+  // initWhatsApp,
   getWhatsAppStatus,
   formatWhatsAppNumber,
   isLiveTwilioConfigured as isLiveNotifyConfigured,

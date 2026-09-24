@@ -1,227 +1,330 @@
-import pkg from "whatsapp-web.js";
-const { Client, LocalAuth } = pkg;
-import qrcode from "qrcode-terminal";
-import puppeteer from "puppeteer";
+// ```
+import "dotenv/config";
 
-let clientInstance = null;
-let isReady = false;
-let isInitializing = false;
-let lastQr = null;
+// /**
+//  * WhatsApp Cloud API Service
+//  *
+//  * Required .env variables:
+//  *
+//  * WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id
+//  * WHATSAPP_ACCESS_TOKEN=your_access_token
+//  * WHATSAPP_BUSINESS_ACCOUNT_ID=your_business_account_id
+//  *
+//  * Optional:
+//  *
+//  * WHATSAPP_API_VERSION=v23.0
+//  */
+
+const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
+const BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+
+// // Keep the API version configurable.
+// // Change this according to the Graph API version currently
+// // supported by your Meta application.
+const API_VERSION = process.env.WHATSAPP_API_VERSION || "v23.0";
+
+const API_URL = `https://graph.facebook.com/${API_VERSION}/${PHONE_NUMBER_ID}/messages`;
 
 /**
- * Initializes the WhatsApp Web client with local authentication persistence.
- * QR code will be printed to the terminal on initial login.
+ * Validate that the required environment variables exist.
  */
-export function initWhatsApp() {
-  if (clientInstance || isInitializing) {
-    return clientInstance;
+function validateConfig() {
+  const missing = [];
+
+  if (!PHONE_NUMBER_ID) {
+    missing.push("WHATSAPP_PHONE_NUMBER_ID");
   }
 
-  isInitializing = true;
-  console.log("🔄 Initializing WhatsApp Web Client...");
+  if (!ACCESS_TOKEN) {
+    missing.push("WHATSAPP_ACCESS_TOKEN");
+  }
 
-  try {
-    clientInstance = new Client({
-      authStrategy: new LocalAuth({
-        dataPath: process.env.WHATSAPP_AUTH_PATH || "./.wwebjs_auth",
-      }),
-      puppeteer: {
-        headless: true,
-        executablePath: puppeteer.executablePath(),
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-accelerated-2d-canvas",
-          "--no-first-run",
-          "--no-zygote",
-          "--disable-gpu",
-        ],
-      },
-    });
-
-    // 1. Handle QR code generation in terminal
-    clientInstance.on("qr", (qr) => {
-      lastQr = qr;
-      isReady = false;
-      console.log("\n========================================");
-      console.log("📱 Scan the QR code below with WhatsApp to log in:");
-      console.log("========================================\n");
-      qrcode.generate(qr, { small: true });
-      console.log("\n========================================\n");
-    });
-
-    // 2. Handle successful authentication
-    clientInstance.on("authenticated", () => {
-      console.log("🔐 WhatsApp Client authenticated successfully!");
-      lastQr = null;
-    });
-
-    clientInstance.on("auth_failure", (msg) => {
-      console.error("❌ WhatsApp Authentication failure:", msg);
-      isReady = false;
-    });
-
-    // 3. Handle ready event
-    clientInstance.on("ready", () => {
-      isReady = true;
-      isInitializing = false;
-      lastQr = null;
-      console.log("✅ WhatsApp Client is ready to send alerts!");
-    });
-
-    // 4. Handle disconnect
-    clientInstance.on("disconnected", (reason) => {
-      console.warn("⚠️ WhatsApp Client disconnected:", reason);
-      isReady = false;
-      isInitializing = false;
-      clientInstance = null;
-    });
-
-    clientInstance.initialize().catch((err) => {
-      console.error("❌ Error during WhatsApp client initialization:", err.message);
-      isInitializing = false;
-      clientInstance = null;
-    });
-
-    return clientInstance;
-  } catch (err) {
-    console.error("❌ Failed to create WhatsApp client:", err.message);
-    isInitializing = false;
-    return null;
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing WhatsApp environment variables: ${missing.join(", ")}`
+    );
   }
 }
 
 /**
- * Returns the current status of the WhatsApp Web client.
+ * Convert a phone number into the format required by
+ * WhatsApp Cloud API.
+ *
+ * Examples:
+ *
+ * +91 98765 43210  -> 919876543210
+ * 09876543210      -> 919876543210
+ * 919876543210     -> 919876543210
+ *
+ * IMPORTANT:
+ * For numbers without a country code, the default country
+ * code is used.
+ */
+export function formatWhatsAppNumber(
+  toNumber,
+  defaultCountryCode = process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || "91"
+) {
+  if (!toNumber) {
+    return null;
+  }
+
+  let digits = String(toNumber).trim();
+
+  // Remove everything except digits.
+  digits = digits.replace(/\D/g, "");
+
+  // Remove leading zero(s).
+  digits = digits.replace(/^0+/, "");
+
+  // If it looks like an Indian/local 10-digit number,
+  // prepend the configured country code.
+  if (digits.length === 10 && defaultCountryCode) {
+    const countryCode = String(defaultCountryCode).replace(/\D/g, "");
+    digits = `${countryCode}${digits}`;
+  }
+
+  return digits;
+}
+
+/**
+ * Send a normal text message using WhatsApp Cloud API.
+ *
+ * @param {string} toNumber
+ * @param {string} messageText
+ * @returns {Promise<object>}
+ */
+export async function sendWhatsAppAlert(toNumber, messageText) {
+  try {
+    validateConfig();
+
+    if (!toNumber) {
+      throw new Error("Target WhatsApp number is required.");
+    }
+
+    if (!messageText) {
+      throw new Error("Message text is required.");
+    }
+
+    const recipient = formatWhatsAppNumber(toNumber);
+
+    if (!recipient) {
+      throw new Error("Invalid WhatsApp phone number.");
+    }
+
+    console.log(`📨 Sending WhatsApp message to: ${recipient}`);
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+
+      headers: {
+        Authorization: `Bearer ${ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+
+        recipient_type: "individual",
+
+        to: recipient,
+
+        type: "text",
+
+        text: {
+          preview_url: false,
+          body: messageText,
+        },
+      }),
+    });
+
+    const data = await response.json();
+
+    /**
+     * Meta returns a non-2xx response when something goes wrong.
+     */
+    if (!response.ok) {
+      console.error("❌ WhatsApp Cloud API Error:", data);
+
+      const apiError =
+        data?.error?.message ||
+        data?.error?.error_data?.details ||
+        "WhatsApp Cloud API request failed.";
+
+      throw new Error(apiError);
+    }
+
+    const messageId = data?.messages?.[0]?.id || null;
+
+    console.log("✅ WhatsApp message sent successfully!");
+    console.log(`📱 Recipient: ${recipient}`);
+    console.log(`🆔 Message ID: ${messageId}`);
+
+    return {
+      success: true,
+      toNumber: recipient,
+      messageId,
+      response: data,
+      timestamp: new Date(),
+    };
+  } catch (error) {
+    console.error("❌ Failed to send WhatsApp message:", error.message);
+
+    return {
+      success: false,
+      toNumber,
+      error: error.message,
+      timestamp: new Date(),
+    };
+  }
+}
+
+/**
+ * Send a WhatsApp template message.
+ *
+ * Use this when your production messaging flow requires
+ * a WhatsApp-approved template.
+ *
+ * Example:
+ *
+ * await sendWhatsAppTemplate(
+ *   "919876543210",
+ *   "order_confirmation",
+ *   "en_US",
+ *   [
+ *      { type: "body", parameters: [...] }
+ *   ]
+ * );
+ */
+export async function sendWhatsAppTemplate(
+  toNumber,
+  templateName,
+  languageCode = "en_US",
+  components = []
+) {
+  try {
+    validateConfig();
+
+    if (!toNumber) {
+      throw new Error("Target WhatsApp number is required.");
+    }
+
+    if (!templateName) {
+      throw new Error("WhatsApp template name is required.");
+    }
+
+    const recipient = formatWhatsAppNumber(toNumber);
+
+    if (!recipient) {
+      throw new Error("Invalid WhatsApp phone number.");
+    }
+
+    console.log(
+      `📨 Sending WhatsApp template "${templateName}" to ${recipient}`
+    );
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+
+      headers: {
+        Authorization: `Bearer ${ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+
+        recipient_type: "individual",
+
+        to: recipient,
+
+        type: "template",
+
+        template: {
+          name: templateName,
+
+          language: {
+            code: languageCode,
+          },
+
+          ...(components.length > 0 && {
+            components,
+          }),
+        },
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("❌ WhatsApp Template API Error:", data);
+
+      const apiError =
+        data?.error?.message ||
+        data?.error?.error_data?.details ||
+        "WhatsApp template request failed.";
+
+      throw new Error(apiError);
+    }
+
+    const messageId = data?.messages?.[0]?.id || null;
+
+    console.log("✅ WhatsApp template sent successfully!");
+    console.log(`📱 Recipient: ${recipient}`);
+    console.log(`🆔 Message ID: ${messageId}`);
+
+    return {
+      success: true,
+      toNumber: recipient,
+      templateName,
+      messageId,
+      response: data,
+      timestamp: new Date(),
+    };
+  } catch (error) {
+    console.error(
+      "❌ Failed to send WhatsApp template:",
+      error.message
+    );
+
+    return {
+      success: false,
+      toNumber,
+      templateName,
+      error: error.message,
+      timestamp: new Date(),
+    };
+  }
+}
+
+/**
+ * Check whether the WhatsApp service has been configured.
+ *
+ * Useful for startup health checks.
  */
 export function getWhatsAppStatus() {
   return {
-    isReady,
-    isInitializing,
-    hasQr: Boolean(lastQr),
-    qr: lastQr,
+    configured: Boolean(PHONE_NUMBER_ID && ACCESS_TOKEN),
+
+    phoneNumberIdConfigured: Boolean(PHONE_NUMBER_ID),
+
+    accessTokenConfigured: Boolean(ACCESS_TOKEN),
+
+    businessAccountIdConfigured: Boolean(BUSINESS_ACCOUNT_ID),
+
+    apiVersion: API_VERSION,
+
+    apiUrlConfigured: Boolean(PHONE_NUMBER_ID && ACCESS_TOKEN),
   };
 }
 
 /**
- * Returns the active WhatsApp client instance.
+ * Export service methods.
  */
-export function getWhatsAppClient() {
-  return clientInstance;
-}
-
-/**
- * Clean and format any phone number into a valid WhatsApp JID format.
- * Handles inputs like:
- *   "+91 98765 43210" -> "919876543210@c.us"
- *   "09876543210"     -> "919876543210@c.us" (if default country code applies)
- *   "919876543210@c.us" -> "919876543210@c.us"
- *   "123456789-123456@g.us" -> "123456789-123456@g.us" (groups)
- */
-export function formatWhatsAppNumber(toNumber, defaultCountryCode = "91") {
-  if (!toNumber) return null;
-
-  let cleaned = String(toNumber).trim();
-
-  // If already contains JID suffix (@c.us or @g.us), return as is
-  if (cleaned.includes("@")) {
-    return cleaned;
-  }
-
-  // Remove non-digit characters
-  let digits = cleaned.replace(/\D/g, "");
-
-  // Remove leading 0 (common in local mobile dialing)
-  if (digits.startsWith("0")) {
-    digits = digits.replace(/^0+/, "");
-  }
-
-  // If standard 10-digit number without country code, prepend default country code (e.g. 91 for India)
-  if (digits.length === 10 && defaultCountryCode) {
-    digits = `${defaultCountryCode}${digits}`;
-  }
-
-  return `${digits}@c.us`;
-}
-
-/**
- * Reusable WhatsApp Alert function.
- * 
- * Can be imported and called from anywhere in the project:
- * e.g.:
- *   import { sendWhatsAppAlert } from "./services/whatsappService.js";
- *   await sendWhatsAppAlert("919876543210", "🔥 Heatwave Alert for Lucknow!");
- *
- * @param {string} toNumber - Target phone number (e.g., "919876543210", "+919876543210", or "9876543210")
- * @param {string} messageText - The alert message text to send
- * @param {object} [options] - Optional settings (e.g. { defaultCountryCode: "91" })
- * @returns {Promise<{ success: boolean, messageId?: string, chatId?: string, error?: string }>}
- */
-export async function sendWhatsAppAlert(toNumber, messageText, options = {}) {
-  try {
-    if (!toNumber || !messageText) {
-      throw new Error("Target phone number (toNumber) and message text (messageText) are required.");
-    }
-
-    if (!clientInstance || !isReady) {
-      const statusMsg = !clientInstance
-        ? "WhatsApp client is not initialized. Call initWhatsApp() first."
-        : "WhatsApp client is not ready yet. Please scan the QR code in the terminal.";
-      console.warn(`⚠️ ${statusMsg}`);
-      return {
-        success: false,
-        error: statusMsg,
-        status: isInitializing ? "INITIALIZING" : (lastQr ? "AWAITING_QR_SCAN" : "DISCONNECTED"),
-      };
-    }
-
-    console.log(`📨 Attempting to send message to: ${toNumber}`);
-
-    const defaultCode = options.defaultCountryCode || process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || "91";
-    const formattedNumber = formatWhatsAppNumber(toNumber, defaultCode);
-
-    console.log(`📱 Formatted number: ${formattedNumber}`);
-
-    // If it's a group chat (@g.us), we skip getNumberId check
-    let chatId = formattedNumber;
-    if (formattedNumber.endsWith("@c.us")) {
-      const registeredUser = await clientInstance.getNumberId(formattedNumber);
-      if (!registeredUser) {
-        throw new Error(
-          `Number (${formattedNumber}) is not registered on WhatsApp. Make sure the number has WhatsApp and country code is correct.`
-        );
-      }
-      chatId = registeredUser._serialized;
-    }
-
-    console.log(`💬 Chat ID: ${chatId}`);
-
-    // Send the message via WhatsApp Web
-    const response = await clientInstance.sendMessage(chatId, messageText);
-    console.log("✅ Alert Sent successfully!");
-
-    return {
-      success: true,
-      chatId,
-      toNumber,
-      messageId: response?.id?._serialized || response?.id?.id || `WA-${Date.now()}`,
-      timestamp: new Date(),
-    };
-  } catch (error) {
-    console.error("❌ Failed to send alert:", error.message);
-    return {
-      success: false,
-      error: error.message,
-      toNumber,
-    };
-  }
-}
-
 export default {
-  initWhatsApp,
-  getWhatsAppStatus,
-  getWhatsAppClient,
-  formatWhatsAppNumber,
   sendWhatsAppAlert,
+  sendWhatsAppTemplate,
+  formatWhatsAppNumber,
+  getWhatsAppStatus,
 };
+

@@ -3,7 +3,7 @@ import {
   sendHeatAlert,
   sendWhatsAppAlert,
   getWhatsAppStatus,
-  initWhatsApp,
+  // initWhatsApp,
 } from "../services/notificationService.js";
 
 export async function listNotifications(req, res, next) {
@@ -26,7 +26,7 @@ export async function getWhatsAppClientStatus(req, res, next) {
 
 export async function triggerWhatsAppInit(req, res, next) {
   try {
-    initWhatsApp();
+    // initWhatsApp();
     const status = getWhatsAppStatus();
     res.json({ success: true, message: "WhatsApp client initialization triggered", data: status });
   } catch (err) {
@@ -37,8 +37,8 @@ export async function triggerWhatsAppInit(req, res, next) {
 export async function sendDirectWhatsAppMessage(req, res, next) {
   try {
     const { to, toNumber, message, messageText } = req.body;
-    const targetNumber = toNumber || to;
-    const alertMessage = messageText || message;
+    const targetNumber =  to  || toNumber ;
+    const alertMessage =  message || messageText ;
 
     if (!targetNumber || !alertMessage) {
       return res.status(400).json({
